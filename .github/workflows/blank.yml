@@ -1,36 +1,32 @@
-# This is a basic workflow to help you get started with Actions
-
-name: CI
-
-# Controls when the workflow will run
-on:
-  # Triggers the workflow on push or pull request events but only for the "main" branch
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-
-  # Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
-
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+name: build-omnivoice-tts
+on: workflow_dispatch
 jobs:
-  # This workflow contains a single job called "build"
   build:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
+    runs-on: windows-latest
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4
-
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
-
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
+      - name: Ambil kode omnivoice.cpp (revisi yang sama dengan VoiceStudio)
+        shell: bash
         run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+          git clone --recurse-submodules https://github.com/ServeurpersoCom/omnivoice.cpp.git src
+          cd src
+          git checkout 886fc079838ca7400cb2b42b36e2a65aa1daabe8
+          git submodule update --init --recursive
+      - name: Build (CPU, kompatibel AVX2)
+        shell: pwsh
+        working-directory: src
+        run: |
+          cmake -B build -DGGML_NATIVE=OFF -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON
+          cmake --build build --config Release -j 4
+      - name: Kumpulkan hasil
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem src/build -Recurse -Filter omnivoice-tts.exe | Select-Object -First 1
+          if (-not $exe) { throw "omnivoice-tts.exe tidak ditemukan setelah build" }
+          New-Item -ItemType Directory out | Out-Null
+          Copy-Item $exe.FullName out/
+          Get-ChildItem $exe.DirectoryName -Filter *.dll | Copy-Item -Destination out/
+          Get-ChildItem out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omnivoice-tts-windows-cpu
+          path: out/*
